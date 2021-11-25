@@ -34,6 +34,7 @@ class WebSocketServer extends events_1.default {
             return this._sendErrorAndClose(socket, enums_1.Errors.INVALID_KEY);
         }
         const client = this.realm.getClientById(id);
+        let finalToken = token; // we need to regenerate token when reconnect below
         if (client) { // client with same Id already exists
             // A magic token indicates it's to reconnect - though it's a different peer from peerjs point of view
             // (we didn't use the built-in peer.reconnect)
@@ -48,6 +49,7 @@ class WebSocketServer extends events_1.default {
                     client.setSocket(null);
                     (_c = this.onClose) === null || _c === void 0 ? void 0 : _c.call(this, client);
                 }
+                finalToken = Math.random().toString(36).substr(2); // regenerate a random token and abandon the magic one
             }
             else { // normal path of peerjs
                 if (token !== client.getToken()) {
@@ -61,7 +63,7 @@ class WebSocketServer extends events_1.default {
                 return this._configureWS(socket, client);
             }
         }
-        this._registerClient({ socket, id, token });
+        this._registerClient({ socket, id, token: finalToken });
     }
     _onSocketError(error) {
         // handle error

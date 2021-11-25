@@ -63,6 +63,7 @@ export class WebSocketServer extends EventEmitter implements IWebSocketServer {
 
     const client = this.realm.getClientById(id);
 
+    let finalToken = token; // we need to regenerate token when reconnect below
     if (client) {   // client with same Id already exists
       // A magic token indicates it's to reconnect - though it's a different peer from peerjs point of view
       // (we didn't use the built-in peer.reconnect)
@@ -78,6 +79,8 @@ export class WebSocketServer extends EventEmitter implements IWebSocketServer {
 
             this.onClose?.(client);
         }
+        // regenerate a random token and abandon the magic one (the same algorithm as used in peerjs client lib)
+        finalToken = Math.random().toString(36).substr(2);  
       } else {  // normal path of peerjs
         if (token !== client.getToken()) {
             // ID-taken, invalid token
@@ -93,7 +96,7 @@ export class WebSocketServer extends EventEmitter implements IWebSocketServer {
       }
     }
 
-    this._registerClient({ socket, id, token });
+    this._registerClient({ socket, id, token: finalToken });
   }
 
   private _onSocketError(error: Error): void {
