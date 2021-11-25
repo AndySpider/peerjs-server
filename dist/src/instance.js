@@ -30,7 +30,10 @@ const createInstance = ({ app, server, options }) => {
     const wss = new webSocketServer_1.WebSocketServer({
         server,
         realm,
-        config: customConfig
+        config: customConfig,
+        onClose: client => {
+            app.emit("disconnect", client);
+        }
     });
     wss.on("connection", (client) => {
         const messageQueue = realm.getMessageQueueById(client.getId());

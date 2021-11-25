@@ -11,11 +11,12 @@ const enums_1 = require("../../enums");
 const client_1 = require("../../models/client");
 const WS_PATH = 'peerjs';
 class WebSocketServer extends events_1.default {
-    constructor({ server, realm, config }) {
+    constructor({ server, realm, config, onClose }) {
         super();
         this.setMaxListeners(0);
         this.realm = realm;
         this.config = config;
+        this.onClose = onClose;
         const path = this.config.path;
         this.path = `${path}${path.endsWith('/') ? "" : "/"}${WS_PATH}`;
         this.socketServer = new ws_1.default.Server({ path: this.path, server });
@@ -23,7 +24,7 @@ class WebSocketServer extends events_1.default {
         this.socketServer.on("error", (error) => this._onSocketError(error));
     }
     _onSocketConnection(socket, req) {
-        var _a;
+        var _a, _b, _c;
         const { query = {} } = url_1.default.parse((_a = req.url) !== null && _a !== void 0 ? _a : '', true);
         const { id, token, key } = query;
         if (!id || !token || !key) {
@@ -33,16 +34,32 @@ class WebSocketServer extends events_1.default {
             return this._sendErrorAndClose(socket, enums_1.Errors.INVALID_KEY);
         }
         const client = this.realm.getClientById(id);
-        if (client) {
-            if (token !== client.getToken()) {
-                // ID-taken, invalid token
-                socket.send(JSON.stringify({
-                    type: enums_1.MessageType.ID_TAKEN,
-                    payload: { msg: "ID is taken" }
-                }));
-                return socket.close();
+        if (client) { // client with same Id already exists
+            // A magic token indicates it's to reconnect - though it's a different peer from peerjs point of view
+            // (we didn't use the built-in peer.reconnect)
+            if (token === '__RECONNECT__') {
+                // close the existing client, and emit close event
+                try {
+                    (_b = client.getSocket()) === null || _b === void 0 ? void 0 : _b.close();
+                }
+                finally {
+                    this.realm.clearMessageQueue(id);
+                    this.realm.removeClientById(id);
+                    client.setSocket(null);
+                    (_c = this.onClose) === null || _c === void 0 ? void 0 : _c.call(this, client);
+                }
             }
-            return this._configureWS(socket, client);
+            else { // normal path of peerjs
+                if (token !== client.getToken()) {
+                    // ID-taken, invalid token
+                    socket.send(JSON.stringify({
+                        type: enums_1.MessageType.ID_TAKEN,
+                        payload: { msg: "ID is taken" }
+                    }));
+                    return socket.close();
+                }
+                return this._configureWS(socket, client);
+            }
         }
         this._registerClient({ socket, id, token });
     }

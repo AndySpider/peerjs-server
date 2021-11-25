@@ -39,7 +39,10 @@ export const createInstance = ({ app, server, options }: {
   const wss: IWebSocketServer = new WebSocketServer({
     server,
     realm,
-    config: customConfig
+    config: customConfig,
+    onClose: client => {
+        app.emit("disconnect", client);
+    }
   });
 
   wss.on("connection", (client: IClient) => {

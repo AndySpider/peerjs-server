@@ -27,15 +27,17 @@ export class WebSocketServer extends EventEmitter implements IWebSocketServer {
   public readonly path: string;
   private readonly realm: IRealm;
   private readonly config: CustomConfig;
+  private readonly onClose?: (client: IClient) => void; // a callback to emit close event to application level
   public readonly socketServer: WebSocketLib.Server;
 
-  constructor({ server, realm, config }: { server: any; realm: IRealm; config: CustomConfig; }) {
+    constructor({ server, realm, config, onClose }: { server: any; realm: IRealm; config: CustomConfig; onClose?: (client: IClient) => void; }) {
     super();
 
     this.setMaxListeners(0);
 
     this.realm = realm;
     this.config = config;
+    this.onClose = onClose;
 
     const path = this.config.path;
     this.path = `${path}${path.endsWith('/') ? "" : "/"}${WS_PATH}`;
@@ -61,18 +63,34 @@ export class WebSocketServer extends EventEmitter implements IWebSocketServer {
 
     const client = this.realm.getClientById(id);
 
-    if (client) {
-      if (token !== client.getToken()) {
-        // ID-taken, invalid token
-        socket.send(JSON.stringify({
-          type: MessageType.ID_TAKEN,
-          payload: { msg: "ID is taken" }
-        }));
+    if (client) {   // client with same Id already exists
+      // A magic token indicates it's to reconnect - though it's a different peer from peerjs point of view
+      // (we didn't use the built-in peer.reconnect)
+      if (token === '__RECONNECT__') {
+        // close the existing client, and emit close event
+        try {
+            client.getSocket()?.close();
+        } finally {
+            this.realm.clearMessageQueue(id);
+            this.realm.removeClientById(id);
 
-        return socket.close();
+            client.setSocket(null);
+
+            this.onClose?.(client);
+        }
+      } else {  // normal path of peerjs
+        if (token !== client.getToken()) {
+            // ID-taken, invalid token
+            socket.send(JSON.stringify({
+                type: MessageType.ID_TAKEN,
+                payload: { msg: "ID is taken" }
+            }));
+
+            return socket.close();
+        }
+
+        return this._configureWS(socket, client);
       }
-
-      return this._configureWS(socket, client);
     }
 
     this._registerClient({ socket, id, token });
